@@ -751,7 +751,7 @@ $settings['entity_update_backup'] = TRUE;
  * node migrations.
  */
 $settings['migrate_node_migrate_type_classic'] = FALSE;
-
+$config['system.logging']['error_level'] = 'verbose';
 /**
  * Load local development override configuration, if available.
  *
