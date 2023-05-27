@@ -6,7 +6,8 @@ phases:
   install:
     commands:
       - echo "install step"
-      - curl -sSL https://github.com/cli/cli/releases/latest/download/gh_linux_amd64.tar.gz | tar -xf 
+      - curl -sSL https://github.com/cli/cli/releases/latest/download/gh_linux_amd64.tar.gz 
+      - tar -xf gh_linux_amd64.tar.gz 
       - mv gh_linux_amd64/bin/gh /usr/local/bin/
 
   pre_build:
