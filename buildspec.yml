@@ -6,11 +6,14 @@ phases:
   install:
     commands:
       - echo "install step"
-      - echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" 
-      - echo "$CODEBUILD_WEBHOOK_PREV_COMMIT" 
   pre_build:
     commands:
       - echo "pre build"
+      - |
+        for file in "$(git diff --name-only $CODEBUILD_RESOLVED_SOURCE_VERSION $CODEBUILD_WEBHOOK_PREV_COMMIT)"; do
+            # Process each line of the output here
+            echo "File: $file"
+        done
   build:
     commands:
       - echo "composer install"
