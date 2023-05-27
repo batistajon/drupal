@@ -1,0 +1,19 @@
+version: 0.2
+
+env:
+  shell: bash
+phases:
+  install:
+    commands:
+      - echo "install step"
+  pre_build:
+    commands:
+      - echo "pre build"
+  build:
+    commands:
+      - echo "composer install"
+  post_build:
+    commands:
+      - echo "Zip the report"
+    finally:
+      - echo "Remove all containers"
