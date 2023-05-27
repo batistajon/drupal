@@ -7,7 +7,10 @@ phases:
     commands:
       - echo "install step"
       - echo Installing GitHub CLI
-      - curl -sSL https://github.com/cli/cli/releases/latest/download/gh_$(uname)_amd64.tar.gz | tar xz --strip-components=1 -C /usr/local/bin/
+      # - yum install -y curl
+      - curl -LJO https://github.com/cli/cli/releases/latest/download/gh_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz
+      - tar xvf gh_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz --strip-components=1 -C /usr/local/bin/
+
   pre_build:
     commands:
       - echo "pre build"
