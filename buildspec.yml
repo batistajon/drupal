@@ -6,15 +6,13 @@ phases:
   install:
     commands:
       - echo "install step"
+      - echo Installing GitHub CLI
+      - curl -O -L https://github.com/cli/cli/releases/latest/download/gh_linux_amd64.deb
+      - dpkg -i gh_linux_amd64.deb
   pre_build:
     commands:
       - echo "pre build"
-      - gh pr diff --name-only
-      - |
-        for file in "$(git diff --name-only $CODEBUILD_RESOLVED_SOURCE_VERSION $CODEBUILD_WEBHOOK_PREV_COMMIT)"; do
-            # Process each line of the output here
-            echo "File: $file"
-        done
+      - gh pr diff $CODEBUILD_RESOLVED_SOURCE_VERSION --name-only
   build:
     commands:
       - echo "composer install"
