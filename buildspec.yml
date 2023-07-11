@@ -13,10 +13,10 @@ phases:
   pre_build:
     commands:
       - echo "pre build"
-      - gh pr diff $CODEBUILD_RESOLVED_SOURCE_VERSION --name-only
   build:
     commands:
       - echo "composer install"
+      - echo "drush commands"
   post_build:
     commands:
       - echo "Zip the report"
