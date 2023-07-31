@@ -1,4 +1,5 @@
-name: drupal-university
+name: drupal
 recipe: drupal9
 config:
   webroot: ./web
+  xdebug: true
