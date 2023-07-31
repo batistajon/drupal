@@ -1,0 +1,27 @@
+sudo: true
+language: php
+dist: xenial
+
+# Adjust the version of PHP to match your production environment. Making this
+# version number greater than the production environment can have unintended
+# consequences including a non-functional prod environment.
+# The version here MUST match the php version indicated in the deploy section
+# of this file further below, otherwise the artifact won't build.
+php: 8.1.9
+
+matrix:
+  fast_finish: true
+
+before_install:
+  - "echo 'Started: ' && date"
+  # Disable xdebug.
+  - phpenv config-rm xdebug.ini
+  - composer validate --no-check-all --ansi
+
+install:
+  - sudo apt-get update > /dev/null
+
+script:
+  - echo "scripts here using travis"
+  - source ${TRAVIS_BUILD_DIR}/scripts/travis/test --no-interaction
+  # - curl -u batista.jonathas@gmail.com:ATATT3xFfGF0lkSdCGkOPrI2QFxwJnRrtLXLSO1eOavmw-vk3UBnFNeKvw325wfofnO7q4LrECJr3NTsv3YuDHwrzY2-f_vhoCSPYDadoJjuYOUQDwqaV7VJhYiw6H7QdTHo85MzUeGEeag-rSB8-00UwQeqEA4q2hETZwnsumyw7dJwXd1-NaM=476CB766 -X GET -H "Content-Type: application/json" "https://autovistoriaex.atlassian.net/rest/api/3/issue/AE-27/transitions" | jq '.[]'
