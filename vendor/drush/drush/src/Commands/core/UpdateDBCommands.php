@@ -2,7 +2,7 @@
 
 namespace Drush\Commands\core;
 
-use Consolidation\Log\ConsoleLogLevel;
+use Drush\Log\SuccessInterface;
 use Drush\Drupal\DrupalUtil;
 use DrushBatchContext;
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
@@ -28,7 +28,7 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
      *
      * @command updatedb
      * @option cache-clear Clear caches upon completion.
-     * @option post-updates Run post updates after hook_update_n and entity updates.
+     * @option post-updates Run post updates after hook_update_n.
      * @bootstrap full
      * @topics docs:deploy
      * @kernel update
@@ -73,7 +73,7 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
                 // Caches were just cleared in updateFinished callback.
             }
 
-            $level = $success ? ConsoleLogLevel::SUCCESS : LogLevel::ERROR;
+            $level = $success ? SuccessInterface::SUCCESS : LogLevel::ERROR;
             $this->logger()->log($level, dt('Finished performing updates.'));
         } else {
             $this->logger()->success(dt('No pending updates.'));
@@ -104,7 +104,12 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
     {
         require_once DRUSH_DRUPAL_CORE . '/includes/install.inc';
         drupal_load_updates();
-        list($pending, $start) = $this->getUpdatedbStatus($options);
+        list($pending, $start, $warnings) = $this->getUpdatedbStatus($options);
+
+        // Output any warnings.
+        foreach ($warnings as $module => $warning) {
+            $this->logger()->warning(dt('!module: !warning', ['!module' => $module, '!warning' => $warning]));
+        }
         if (empty($pending)) {
             $this->logger()->success(dt("No database updates required."));
         } else {
@@ -231,7 +236,12 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
 
         // Record the schema update if it was completed successfully.
         if ($context['finished'] >= 1 && empty($ret['#abort'])) {
-            drupal_set_installed_schema_version($module, $number);
+            // TODO: setInstalledVersion in update.update_hook_registry introduced in Drupal 9.3.0
+            if (!function_exists('drupal_set_installed_schema_version')) {
+                \Drupal::service("update.update_hook_registry")->setInstalledVersion($module, $number);
+            } else {
+                drupal_set_installed_schema_version($module, $number);
+            }
             // Setting this value will output a success message.
             // @see \DrushBatchContext::offsetSet()
             $context['message'] = "Update completed: $function";
@@ -260,11 +270,18 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
             return;
         }
 
-        list($module, $name) = explode('_post_update_', $function, 2);
-        $filename = $module . '.post_update';
-        \Drupal::moduleHandler()->loadInclude($module, 'php', $filename);
+        list($extension, $name) = explode('_post_update_', $function, 2);
+        $update_registry = \Drupal::service('update.post_update_registry');
+        // https://www.drupal.org/project/drupal/issues/3259188 Support theme's
+        // having post update functions when it is supported in Drupal core.
+        if (method_exists($update_registry, 'getUpdateFunctions')) {
+            \Drupal::service('update.post_update_registry')->getUpdateFunctions($extension);
+        } else {
+            \Drupal::service('update.post_update_registry')->getModuleUpdateFunctions($extension);
+        }
+
         if (function_exists($function)) {
-            if (empty($context['results'][$module][$name]['type'])) {
+            if (empty($context['results'][$extension][$name]['type'])) {
                 Drush::logger()->notice("Update started: $function");
             }
             try {
@@ -301,10 +318,10 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
             $context['finished'] = $context['sandbox']['#finished'];
             unset($context['sandbox']['#finished']);
         }
-        if (!isset($context['results'][$module][$name])) {
-            $context['results'][$module][$name] = [];
+        if (!isset($context['results'][$extension][$name])) {
+            $context['results'][$extension][$name] = [];
         }
-        $context['results'][$module][$name] = array_merge($context['results'][$module][$name], $ret);
+        $context['results'][$extension][$name] = array_merge($context['results'][$extension][$name], $ret);
 
         // Log the message that was returned.
         if (!empty($ret['results']['query'])) {
@@ -368,7 +385,12 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
                 // correct place. (The updates are already sorted, so we can simply base
                 // this on the first one we come across in the above foreach loop.)
                 if (isset($start[$update['module']])) {
-                    drupal_set_installed_schema_version($update['module'], $update['number'] - 1);
+                    // TODO: setInstalledVersion in update.update_hook_registry introduced in Drupal 9.3.0
+                    if (!function_exists('drupal_set_installed_schema_version')) {
+                        \Drupal::service("update.update_hook_registry")->setInstalledVersion($update['module'], $update['number'] - 1);
+                    } else {
+                        drupal_set_installed_schema_version($update['module'], $update['number'] - 1);
+                    }
                     unset($start[$update['module']]);
                 }
                 // Add this update function to the batch.
@@ -436,7 +458,9 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
         $return = [];
         $updates = update_get_update_list();
         foreach ($updates as $module => $update) {
-            $return[$module] = $update['start'];
+            if (!empty($update['start'])) {
+                $return[$module] = $update['start'];
+            }
         }
 
         return $return;
@@ -467,9 +491,14 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
     }
 
     /**
-     * Return a 2 item array with
-     *  - an array where each item is a 4 item associative array describing a pending update.
-     *  - an array listing the first update to run, keyed by module.
+     * Returns information about available module updates.
+     *
+     * @return array
+     *   An indexed array (aka tuple) with 3 elements:
+     *  - An array where each item is a 4 item associative array describing a
+     *    pending update.
+     *  - An array listing the first update to run, keyed by module.
+     *  - An array listing the available warnings, keyed by module.
      */
     public function getUpdatedbStatus(array $options): array
     {
@@ -477,11 +506,14 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
         $pending = \update_get_update_list();
 
         $return = [];
+        $warnings = [];
+
         // Ensure system module's updates run first.
         $start['system'] = [];
 
         foreach ($pending as $module => $updates) {
             if (isset($updates['start'])) {
+                $start[$module] = $updates['start'];
                 foreach ($updates['pending'] as $update_id => $description) {
                     // Strip cruft from front.
                     $description = str_replace($update_id . ' -   ', '', $description);
@@ -492,14 +524,16 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
                         'type' => 'hook_update_n'
                     ];
                 }
-                if (isset($updates['start'])) {
-                    $start[$module] = $updates['start'];
-                }
+            }
+            if (isset($updates['warning'])) {
+                $warnings[$module] = $updates['warning'];
             }
         }
 
         // Pending hook_post_update_X() implementations.
-        $post_updates = \Drupal::service('update.post_update_registry')->getPendingUpdateInformation();
+        /** @var \Drupal\Core\Update\UpdateRegistry $post_update_registry */
+        $post_update_registry = \Drupal::service('update.post_update_registry');
+        $post_updates = $post_update_registry->getPendingUpdateInformation();
         if ($options['post-updates']) {
             foreach ($post_updates as $module => $post_update) {
                 foreach ($post_update as $key => $list) {
@@ -508,7 +542,7 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
                             $return[$module . '-post-' . $id] = [
                                 'module' => $module,
                                 'update_id' => $id,
-                                'description' => $item,
+                                'description' => trim($item),
                                 'type' => 'post-update'
                             ];
                         }
@@ -517,7 +551,7 @@ class UpdateDBCommands extends DrushCommands implements SiteAliasManagerAwareInt
             }
         }
 
-        return [$return, $start];
+        return [$return, $start, $warnings];
     }
 
     /**
